@@ -1,0 +1,5 @@
+#!/bin/ksh
+
+DIR=$(dirname $(whence $0))
+node $DIR/listener.js | $DIR/node_modules/.bin/bunyan -o short
+
