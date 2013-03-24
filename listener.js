@@ -52,6 +52,7 @@ s.get('/provis/info/:name', sigAuth, function(req, res, next) {
 
 var hosts_cache = null;
 var hosts_timeout = null;
+var hosts_queue = [];
 
 function invalidateHosts(byTimer)
 {
@@ -66,16 +67,22 @@ function invalidateHosts(byTimer)
   }
 }
 
-s.get('/provis/hosts', function(req, res, next) {
-  log.info('/etc/hosts request from ' + req.sourceIP);
-  res.contentType = 'text/plain';
+function getHosts(callback)
+{
   if (hosts_cache !== null)
-    return res.send(200, hosts_cache);
+    return callback(null, hosts_cache);
+
+  hosts_queue.push(callback);
+  if (hosts_queue.length > 1)
+    return;
 
   jpc.makeHosts(function(err, hosts) {
     if (err) {
-      log('could not fetch hosts', err);
-      return res.send(500);
+      log.error('could not fetch hosts', err);
+      while (hosts_queue.length > 0) {
+        hosts_queue.pop()(err);
+      }
+      return;
     }
     log.info('/etc/hosts updated from JPC (' +
       hosts.length + ' entries)');
@@ -84,7 +91,20 @@ s.get('/provis/hosts', function(req, res, next) {
     hosts_timeout = setTimeout(function() { invalidateHosts(true); },
       3600 * 1000); /* 1 hour */
 
-    return res.send(200, hosts_cache);
+    while (hosts_queue.length > 0) {
+      hosts_queue.pop()(null, hosts_cache);
+    }
+  });
+}
+
+s.get('/provis/hosts', function(req, res, next) {
+  log.info('/etc/hosts request from ' + req.sourceIP);
+  res.contentType = 'text/plain';
+  getHosts(function(err, hosts) {
+    if (err)
+      return res.send(500);
+    else
+      return res.send(200, hosts);
   });
 });
 
