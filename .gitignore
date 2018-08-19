@@ -1,3 +1,6 @@
-/DATA.sqlite3
-/LOG.txt
+/var/
 /node_modules/
+/node
+/proto/
+/cache/
+/make_stamps/
