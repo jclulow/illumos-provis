@@ -2,17 +2,21 @@
 /* vim: set ts=8 sts=8 sw=8 noet: */
 
 var mod_net = require('net');
+var mod_path = require('path');
+var mod_fs = require('fs');
 
 var mod_assert = require('assert-plus');
 var mod_http_sig = require('http-signature');
 var mod_bunyan = require('bunyan');
 var mod_restify = require('restify');
 var mod_vasync = require('vasync');
-//var mod_verror = require('verror');
+var mod_verror = require('verror');
 
 var lib_jpc = require('../lib/jpc');
+var lib_bot = require('../lib/bot');
+var lib_db = require('../lib/db');
 
-//var VE = mod_verror.VError;
+var VE = mod_verror.VError;
 
 
 function
@@ -139,16 +143,120 @@ create_server(log, callback)
 	});
 }
 
+function
+create_bot(log, db, callback)
+{
+	log.info('starting Telegram bot');
+
+	/*
+	 * First, load the bot access token from disk.
+	 */
+	var p = mod_path.join(__dirname, '..', 'var', 'token.txt');
+	var tok = mod_fs.readFileSync(p, 'utf8').trim();
+	var bot;
+
+	lib_bot.create_bot({ token: tok, log: log.child({ component: 'bot' }),
+	    update_func: function (u, next) {
+		log.info({ update: u }, 'telegram bot "update"');
+
+		log = log.child({ update_id: u.update_id });
+
+		if (typeof (u.message) !== 'object') {
+			log.info('not a message');
+			setImmediate(next);
+			return;
+		}
+
+		var m = u.message;
+
+		if (!m.chat || m.chat.type !== 'private') {
+			log.info('not a private chat');
+			setImmediate(next);
+			return;
+		}
+
+		if (!m.from || m.from.is_bot || typeof (m.from.id) !== 'number') {
+			log.info('not a proper private message from a user');
+			setImmediate(next);
+			return;
+		}
+
+		var logu = log.child({ user: m.from });
+		logu.info('ok, it is a message...');
+
+		db.telegram_user_load({ id: m.from.id, from: m.from },
+		    function (err, tgu) {
+			if (err) {
+				logu.error(err, 'database get failure');
+				return;
+			}
+
+			if (!tgu.tgu_allow) {
+				logu.info('sending no-auth message');
+				bot.send_message({ target_id: m.from.id,
+				    format: 'html',
+				    message: 'not authorised' },
+				    function (err) {
+					if (err) {
+						logu.error(err,
+						    'send message failure');
+					} else {
+						logu.info('message sent');
+					}
+
+					next();
+				});
+				return;
+			}
+
+			logu.info('sending auth message');
+			bot.send_message({ target_id: m.from.id,
+			    format: 'html',
+			    message: 'ok!' },
+			    function (err) {
+				next();
+			});
+		});
+
+	}}, function (err, _bot) {
+		if (err) {
+			callback(new VE(err, 'bot init failed'));
+			return;
+		}
+
+		bot = _bot;
+
+		callback();
+	});
+}
+
 setImmediate(function
 main()
 {
 	var log = mod_bunyan.createLogger({
 		name: 'provis',
-		level: process.env.LOG_LEVEL || mod_bunyan.INFO
+		level: process.env.LOG_LEVEL || mod_bunyan.INFO,
+		serializers: mod_bunyan.stdSerializers
 	});
+
+	var db;
 
 	mod_vasync.pipeline({ arg: {}, funcs: [ function (_, next) {
 		lib_jpc.load_dc_list(next);
+
+	}, function (_, next) {
+		lib_db.db_open(function (err, _db) {
+			if (err) {
+				next(err);
+				return;
+			}
+
+			db = _db;
+			next();
+		});
+
+	}, function (_, next) {
+		create_bot(log, db, next);
 
 	}, function (_, next) {
 		create_server(log, next);
