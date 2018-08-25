@@ -146,14 +146,20 @@ create_server(log, callback)
 function
 create_bot(log, db, callback)
 {
-	log.info('starting Telegram bot');
-
 	/*
 	 * First, load the bot access token from disk.
 	 */
 	var p = mod_path.join(__dirname, '..', 'var', 'token.txt');
+	if (!mod_fs.existsSync(p)) {
+		log.info('no Telegram token file (%s); skipping bot', p);
+		setImmediate(callback);
+		return;
+	}
+
 	var tok = mod_fs.readFileSync(p, 'utf8').trim();
 	var bot;
+
+	log.info('starting Telegram bot');
 
 	lib_bot.create_bot({ token: tok, log: log.child({ component: 'bot' }),
 	    update_func: function (u, next) {
