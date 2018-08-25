@@ -1,0 +1,8 @@
+{
+	"category": "site",
+	"ident": "provis",
+	"label": "illumos provis",
+	"user": "provis",
+	"group": "provis",
+	"start": "PREFIX/bin/listener"
+}

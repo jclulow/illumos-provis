@@ -11,6 +11,7 @@
     "restify": "^7.2.1",
     "restify-clients": "^2.5.0",
     "smartdc": "^8.1.0",
+    "smfgen": "^1.0.0",
     "sqlite3": "^4.0.2",
     "vasync": "^2.2.0",
     "verror": "^1.10.0"

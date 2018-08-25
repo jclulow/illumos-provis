@@ -29,6 +29,8 @@ COMMANDS =			$(subst .js,,$(notdir $(wildcard cmd/*.js)))
 
 LIB_FILES =			$(notdir $(wildcard lib/*.js))
 
+SMF_MANIFESTS =			$(subst .json,,$(notdir $(wildcard smf/*.json)))
+
 NODE_BITS =			bin/node \
 				lib/libgcc_s.so.1 \
 				lib/libstdc++.so.6
@@ -42,6 +44,7 @@ INSTALL_FILES =			$(addprefix $(PROTO), \
 				$(COMMANDS:%=$(PREFIX)/bin/%) \
 				$(LIB_FILES:%=$(PREFIX)/lib/%) \
 				$(PREFIX)/lib/wrap.sh \
+				$(SMF_MANIFESTS:%=$(PREFIX)/smf/%.xml) \
 				)
 
 INSTALL_DIRS =			$(addprefix $(PROTO), \
@@ -49,6 +52,7 @@ INSTALL_DIRS =			$(addprefix $(PROTO), \
 				$(PREFIX)/cmd \
 				$(PREFIX)/lib \
 				$(PREFIX)/var \
+				$(PREFIX)/smf \
 				$(NODE_DIR)/bin \
 				$(NODE_DIR)/lib \
 				)
@@ -84,6 +88,9 @@ $(PROTO)$(NODE_MODULE_INSTALL): $(STAMP_NODE_MODULES) | $(INSTALL_DIRS)
 	rm -rf $(@D)/
 	cp -rP node_modules/ $(@D)/
 	touch $@
+
+$(PROTO)$(PREFIX)/smf/%.xml: smf/%.json | $(STAMP_NODE_MODULES) $(INSTALL_DIRS)
+	sed -e 's,PREFIX,$(PREFIX),g' $< | $(NODE) node_modules/.bin/smfgen > $@
 
 #
 # Check targets:
