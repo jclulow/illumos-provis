@@ -117,6 +117,67 @@ get_hosts(req, res, next)
 }
 
 function
+get_file_common(p, req, res, next)
+{
+	var input = mod_fs.createReadStream(p);
+	res.writeHead(200);
+	input.pipe(res);
+	res.on('finish', function () {
+		next();
+	});
+	input.on('error', function (err) {
+		req.log.error(err, 'error reading "%s"', p);
+		next(err);
+	});
+}
+
+function
+get_public_file(req, res, next)
+{
+	var f = req.params.f;
+	if (!f || f.indexOf('/') !== -1) {
+		res.send(400);
+		next(false);
+		return;
+	}
+
+	var p = mod_path.join(__dirname, '..', 'var', 'files', 'public', f);
+	if (!mod_fs.existsSync(p)) {
+		res.send(400);
+		next(false);
+		return;
+	}
+
+	req.log.info('get public file "%s" -> "%s"', f, p);
+
+	return (get_file_common(p, req, res, next));
+}
+
+function
+get_private_file(req, res, next)
+{
+	mod_assert.ok(req.p_auth, 'expected authentication');
+
+	var f = req.params.f;
+	if (!f || f.indexOf('/') !== -1) {
+		res.send(400);
+		next(false);
+		return;
+	}
+
+	var p = mod_path.join(__dirname, '..', 'var', 'files', 'private', f);
+	if (!mod_fs.existsSync(p)) {
+		res.send(400);
+		next(false);
+		return;
+	}
+
+	req.log.info('get private file "%s" -> "%s"', f, p);
+
+	return (get_file_common(p, req, res, next));
+}
+
+function
 create_server(log, callback)
 {
 	var s = mod_restify.createServer({ log: log });
@@ -128,6 +189,8 @@ create_server(log, callback)
 	}));
 
 	s.get('/provis/hosts', check_signature, get_hosts);
+	s.get('/provis/s/:f', check_signature, get_private_file);
+	s.get('/provis/p/:f', get_public_file);
 
 	s.on('after', mod_restify.plugins.auditLogger({
 		log: log.child({ audit: true }),
