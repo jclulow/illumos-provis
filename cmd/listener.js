@@ -92,6 +92,44 @@ check_signature(req, res, next)
 		return;
 	}
 
+	if ((m = p.params.keyId.match(/^hostid:([a-f0-9-]+)$/)) !== null) {
+		/*
+		 * This might be the host-level SSH key for a standalone host.
+		 */
+		var hi = m[1];
+
+		req.p_db.hostid_pubkey(hi, function (err, pk) {
+			if (err) {
+				res.send(403);
+				next(false);
+				return;
+			}
+
+			if (pk === null) {
+				req.log.info('no public key for host "%s"', hi);
+				res.send(403);
+				next(false);
+				return;
+			}
+
+			req.log.info({ pk: pk },
+			    'found public key for host "%s"', hi);
+
+			if (!mod_http_sig.verifySignature(p, pk)) {
+				req.log.info('signature check failure');
+				res.send(403);
+				next(false);
+				return;
+			}
+
+			req.p_auth = true;
+			req.p_hostid = hi;
+			req.log.info('auth ok for host %s', hi);
+			next();
+		});
+		return;
+	}
+
 	res.send(403);
 	next(false);
 }
@@ -103,16 +141,24 @@ get_hosts(req, res, next)
 
 	req.log.info('get hosts');
 
-	lib_jpc.make_hosts(function (err, hosts) {
+	req.p_db.etchosts(function (err, extrahosts) {
 		if (err) {
 			res.send(err);
 			next(false);
 			return;
 		}
 
-		res.contentType = 'text/plain';
-		res.send(200, hosts.join('\n') + '\n');
-		next();
+		lib_jpc.make_hosts(extrahosts, function (err, hosts) {
+			if (err) {
+				res.send(err);
+				next(false);
+				return;
+			}
+
+			res.contentType = 'text/plain';
+			res.send(200, hosts.join('\n') + '\n');
+			next();
+		});
 	});
 }
 
@@ -178,9 +224,15 @@ get_private_file(req, res, next)
 }
 
 function
-create_server(log, callback)
+create_server(log, db, callback)
 {
 	var s = mod_restify.createServer({ log: log });
+
+	s.use(function (req, res, next) {
+		req.p_db = db;
+		setImmediate(next);
+	});
+
 	s.use(mod_restify.plugins.bodyParser());
 	s.use(from_localhost);
 
@@ -328,7 +380,7 @@ main()
 		create_bot(log, db, next);
 
 	}, function (_, next) {
-		create_server(log, next);
+		create_server(log, db, next);
 
 	}]}, function (err) {
 		if (err) {
